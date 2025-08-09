@@ -1,0 +1,17 @@
+[package]
+name = "tg-paylink-bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+teloxide = { version = "0.17", features = ["macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+dotenvy = "0.15"
+anyhow = "1"
+base64 = "0.21"
+rand = "0.8"
+dashmap = "5.5"
