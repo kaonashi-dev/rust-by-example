@@ -11,6 +11,8 @@ enum Token {
     Comma,
     Semicolon,
     Equal,
+    Colon,
+    Type(String),
     Ident(String),
     Str(String),
     Eof,
@@ -90,12 +92,16 @@ impl Lexer {
             ',' => Token::Comma,
             ';' => Token::Semicolon,
             '=' => Token::Equal,
+            ':' => Token::Colon,
             '"' => Token::Str(self.string()?),
             c if c.is_alphabetic() || c == '_' => {
                 let s = self.ident_or_kw(c);
                 match s.as_str() {
                     "let" => Token::Let,
                     "print" => Token::Print,
+                    "string" => Token::Type(s),
+                    "int" => Token::Type(s),
+                    "bool" => Token::Type(s),
                     _ => Token::Ident(s),
                 }
             }
@@ -119,7 +125,7 @@ impl Lexer {
 
 #[derive(Debug)]
 enum Stmt {
-    Let { name: String, value: String },
+    Let { name: String, #[allow(dead_code)] type_annotation: Option<String>, value: String },
     Print { format: String, args: Vec<String> },
 }
 
@@ -175,13 +181,25 @@ impl Parser {
             Token::Ident(s) => s,
             t => return Err(format!("Expected identifier after let, got {:?}", t)),
         };
+        
+        // Check for optional type annotation
+        let type_annotation = if matches!(self.peek(), Token::Colon) {
+            self.expect(&Token::Colon)?;
+            match self.bump().clone() {
+                Token::Type(s) => Some(s),
+                t => return Err(format!("Expected type after ':', got {:?}", t)),
+            }
+        } else {
+            None
+        };
+        
         self.expect(&Token::Equal)?;
         let value = match self.bump().clone() {
             Token::Str(s) => s,
             t => return Err(format!("Expected string literal after '=', got {:?}", t)),
         };
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Let { name, value })
+        Ok(Stmt::Let { name, type_annotation, value })
     }
 
     fn parse_print(&mut self) -> Result<Stmt, String> {
@@ -227,7 +245,9 @@ impl Interpreter {
     fn run(&mut self, prog: Program) -> Result<(), String> {
         for s in prog.body {
             match s {
-                Stmt::Let { name, value } => {
+                Stmt::Let { name, type_annotation: _, value } => {
+                    // For now, we'll just store the value without type checking
+                    // In a more complete implementation, we would validate the type
                     self.env.insert(name, value);
                 }
                 Stmt::Print { format, args } => self.exec_print(format, args)?,
@@ -237,18 +257,14 @@ impl Interpreter {
     }
 
     fn exec_print(&self, format: String, args: Vec<String>) -> Result<(), String> {
-        // Sustituye secuencialmente cada "{}" por el valor de cada nombre en args.
         let mut out = String::new();
         let mut fmt = format.as_str();
         let mut remaining_args = args.iter();
 
         loop {
             match fmt.find("{}") {
-                // Option<usize>: Some(pos) o None
                 Some(pos) => {
-                    // copiar hasta el marcador
                     out.push_str(&fmt[..pos]);
-                    // tomar el próximo argumento
                     let name = remaining_args
                         .next()
                         .ok_or_else(|| "print: missing arguments for placeholders".to_string())?;
@@ -257,18 +273,15 @@ impl Interpreter {
                         .get(name)
                         .ok_or_else(|| format!("Undefined variable: {name}"))?;
                     out.push_str(val);
-                    // avanzar después de "{}"
                     fmt = &fmt[pos + 2..];
                 }
                 None => {
-                    // no hay más "{}", copiar el resto y salir
                     out.push_str(fmt);
                     break;
                 }
             }
         }
 
-        // Si sobraron args, también es error (más args que "{}")
         if remaining_args.next().is_some() {
             return Err("print: too many arguments for placeholders".to_string());
         }
